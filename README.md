@@ -4,7 +4,7 @@ A browser-based Snake game with a green LCD phone look, built with plain HTML, C
 
 **Play it here:** https://sunishaphadtare15.github.io/classicsnake/
 
-\[Screenshot of the game](screenshot.png)
+![Screenshot of the game](screenshot.png)
 
 ## Features
 
