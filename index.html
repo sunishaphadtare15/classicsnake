@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Classic Snake</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Color tokens: change these to re-theme the whole game ---------- */
+  :root {
+    --page: #16202c;        /* page background */
+    --body-top: #3d6290;    /* phone body gradient */
+    --body-bottom: #29445f;
+    --bezel: #1b232e;       /* dark frame around the screen */
+    --lcd: #b5c98e;         /* the green screen */
+    --lcd-light: #c4d6a0;   /* lighter middle of the screen */
+    --ink: #243020;         /* the dark "pixels" */
+    --key: #c9d3de;         /* phone buttons */
+    --board: min(64vw, 52vh, 400px);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--page);
+    font-family: "Press Start 2P", "Courier New", monospace;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 20px 0;
+  }
+
+  /* ---------- The phone ---------- */
+  .phone {
+    background: linear-gradient(160deg, var(--body-top), var(--body-bottom));
+    border-radius: 38px 38px 46px 46px;
+    padding: 18px 20px 24px;
+    box-shadow:
+      0 24px 40px rgba(0, 0, 0, 0.55),
+      inset 0 2px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+  }
+
+  .brand {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    margin-bottom: 14px;
+  }
+
+  .bezel {
+    background: var(--bezel);
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.05);
+  }
+
+  /* The LCD itself */
+  .lcd {
+    background: radial-gradient(circle at 50% 40%, var(--lcd-light), var(--lcd) 75%);
+    color: var(--ink);
+    padding: 10px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 14px rgba(36, 48, 32, 0.35);
+  }
+  .lcd.crash { animation: blink 0.6s steps(1) 1; }
+
+  /* Score row at the top of the screen */
+  .hud {
+    width: var(--board);
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+  }
+
+  /* Board = canvas + overlay on top of it */
+  .board {
+    position: relative;
+    width: var(--board);
+    height: var(--board);
+    border: 3px solid var(--ink);
+    overflow: hidden;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    touch-action: none; /* lets us handle swipes without the page scrolling */
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    text-align: center;
+    padding: 14px;
+    background: rgba(181, 201, 142, 0.94);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(0.85rem, 4.2vw, 1.25rem);
+    line-height: 1.4;
+  }
+  .overlay p { margin: 0; font-size: 0.55rem; line-height: 1.8; }
+
+  button { font-family: inherit; cursor: pointer; }
+
+  .play {
+    margin-top: 4px;
+    padding: 10px 16px;
+    font-size: 0.7rem;
+    color: var(--lcd);
+    background: var(--ink);
+    border: 3px solid var(--ink);
+    border-radius: 0;
+  }
+  .play:hover { background: transparent; color: var(--ink); }
+  .play:focus-visible, .lvl:focus-visible, .pad button:focus-visible {
+    outline: 3px dashed var(--ink);
+    outline-offset: 3px;
+  }
+
+  /* Difficulty buttons */
+  .levels { display: flex; gap: 6px; }
+  .lvl {
+    font-size: 0.5rem;
+    padding: 8px 8px;
+    color: var(--ink);
+    background: transparent;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+  }
+  .lvl.active { color: var(--lcd); background: var(--ink); }
+
+  /* On-screen keys (only shown on touch devices) */
+  .pad {
+    display: none;
+    grid-template-columns: repeat(3, 58px);
+    grid-template-rows: repeat(2, 52px);
+    gap: 8px;
+    justify-content: center;
+    margin-top: 18px;
+  }
+  .pad button {
+    font-size: 1.1rem;
+    color: #34485c;
+    background: linear-gradient(#e2e9f0, var(--key));
+    border: none;
+    border-radius: 26px;
+    box-shadow: 0 4px 0 #7f8c99, 0 6px 8px rgba(0, 0, 0, 0.35);
+  }
+  .pad button:active { transform: translateY(3px); box-shadow: 0 1px 0 #7f8c99; }
+  .pad .up    { grid-column: 2; grid-row: 1; }
+  .pad .left  { grid-column: 1; grid-row: 2; }
+  .pad .down  { grid-column: 2; grid-row: 2; }
+  .pad .right { grid-column: 3; grid-row: 2; }
+
+  .hint {
+    margin: 0;
+    font-size: 0.5rem;
+    line-height: 1.8;
+    color: #7f93a8;
+    text-align: center;
+    padding: 0 12px;
+  }
+
+  @media (hover: none) and (pointer: coarse) {
+    .pad { display: grid; }
+    .hint.desktop { display: none; }
+  }
+
+  /* On game over the whole screen blinks like an old LCD */
+  @keyframes blink {
+    0%   { filter: none; }
+    20%  { filter: brightness(0.55); }
+    40%  { filter: none; }
+    60%  { filter: brightness(0.55); }
+    80%  { filter: none; }
+    100% { filter: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lcd.crash { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="app">
+
+    <div class="phone">
+      <div class="brand">SNAKE</div>
+
+      <div class="bezel">
+        <div class="lcd" id="lcd">
+          <div class="hud">
+            <span>SCORE <span id="score">0</span></span>
+            <span>BEST <span id="best">0</span></span>
+          </div>
+
+          <div class="board">
+            <canvas id="game" aria-label="Snake game board"></canvas>
+
+            <div class="overlay" id="overlay">
+              <h2 id="ovTitle">SNAKE</h2>
+              <p id="ovText">Eat the food. Avoid walls and yourself.</p>
+              <div class="levels" id="levels">
+                <button class="lvl" data-level="easy">EASY</button>
+                <button class="lvl" data-level="medium">MEDIUM</button>
+                <button class="lvl" data-level="hard">HARD</button>
+              </div>
+              <button class="play" id="playBtn">PLAY</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pad" aria-label="On-screen controls">
+        <button class="up" data-dir="up" aria-label="Up">&#9650;</button>
+        <button class="left" data-dir="left" aria-label="Left">&#9664;</button>
+        <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
+        <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
+      </div>
+    </div>
+
+    <p class="hint desktop">Arrow keys or WASD to move<br>Space to pause</p>
+    <p class="hint">Touch: swipe on the screen or use the keys</p>
+  </main>
+
+<script>
+/* =====================================================
+   CLASSIC SNAKE
+   How it works (good to know for interviews):
+   1. The board is a grid of COLS x COLS cells.
+   2. The snake is an array of {x, y} cells. Index 0 is the head.
+   3. Every "tick" we add a new head in the current direction.
+      If we ate food we keep the tail (snake grows), otherwise we remove it.
+   4. A requestAnimationFrame loop redraws every frame, but only
+      moves the snake when enough time (tickMs) has passed.
+   ===================================================== */
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const lcdEl = document.getElementById('lcd');
+const overlay = document.getElementById('overlay');
+const ovTitle = document.getElementById('ovTitle');
+const ovText = document.getElementById('ovText');
+const playBtn = document.getElementById('playBtn');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+
+const COLS = 20;           // grid is 20 x 20
+const CELL = 30;           // each cell is 30px in canvas units (canvas is scaled by CSS)
+canvas.width = canvas.height = COLS * CELL;
+
+// Colors for drawing on the canvas (match the CSS tokens at the top)
+const INK = '#243020';                       // dark pixels
+const LCD = '#b5c98e';                       // screen color
+const GHOST = 'rgba(36, 48, 32, 0.07)';      // faint "switched-off" pixels like a real LCD
+
+// Speeds for each difficulty (ms per move, lower = faster)
+// start = speed at the beginning, min = fastest the game can get
+const LEVELS = {
+  easy:   { start: 170, min: 100 },
+  medium: { start: 135, min: 65 },
+  hard:   { start: 100, min: 45 },
+};
+let level = 'medium';
+try { level = localStorage.getItem('neonSnakeLevel') || 'medium'; } catch (e) {}
+if (!LEVELS[level]) level = 'medium';
+
+// ---------- Game state ----------
+let snake, dir, queue, food, score, eaten, tickMs, lastTick, state;
+// state is one of: 'ready' | 'playing' | 'paused' | 'over'
+
+// ---------- High score (localStorage can fail in private mode, so we guard it) ----------
+let best = 0;
+try { best = Number(localStorage.getItem('neonSnakeBest')) || 0; } catch (e) {}
+bestEl.textContent = best;
+
+function reset() {
+  snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+  dir = { x: 1, y: 0 };
+  queue = [];                // buffered key presses so fast turns are not lost
+  score = 0;
+  eaten = 0;
+  tickMs = LEVELS[level].start;
+  placeFood();
+  scoreEl.textContent = 0;
+}
+
+function placeFood() {
+  // keep picking random cells until we find one the snake is not on
+  let p;
+  do {
+    p = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * COLS) };
+  } while (snake.some(s => s.x === p.x && s.y === p.y));
+  food = p;
+}
+
+// ---------- Input ----------
+function setDirection(dx, dy) {
+  if (state === 'ready') startGame();           // first move also starts the game
+  if (state !== 'playing') return;
+
+  // compare against the last queued direction (or the current one)
+  const last = queue.length ? queue[queue.length - 1] : dir;
+  const isReverse = last.x === -dx && last.y === -dy;  // can't turn 180 degrees into yourself
+  const isSame = last.x === dx && last.y === dy;
+  if (isReverse || isSame || queue.length >= 3) return;
+  queue.push({ x: dx, y: dy });
+}
+
+const KEYS = {
+  ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
+  ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
+  ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0],
+  ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
+};
+
+document.addEventListener('keydown', e => {
+  if (KEYS[e.key]) {
+    e.preventDefault();                          // stop arrow keys scrolling the page
+    setDirection(...KEYS[e.key]);
+  } else if (e.key === ' ') {
+    e.preventDefault();
+    if (state === 'playing') pauseGame();
+    else if (state === 'paused') resumeGame();
+    else startGame();
+  }
+});
+
+// On-screen buttons
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+document.querySelectorAll('.pad button').forEach(btn => {
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    setDirection(...DIRS[btn.dataset.dir]);
+  });
+});
+
+// Swipe controls on the canvas
+let touchStart = null;
+canvas.addEventListener('touchstart', e => {
+  const t = e.changedTouches[0];
+  touchStart = { x: t.clientX, y: t.clientY };
+}, { passive: true });
+canvas.addEventListener('touchend', e => {
+  if (!touchStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStart.x;
+  const dy = t.clientY - touchStart.y;
+  touchStart = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;   // too small to be a swipe
+  if (Math.abs(dx) > Math.abs(dy)) setDirection(dx > 0 ? 1 : -1, 0);
+  else setDirection(0, dy > 0 ? 1 : -1);
+}, { passive: true });
+
+playBtn.addEventListener('click', () => {
+  if (state === 'paused') resumeGame();
+  else startGame();
+});
+
+// Auto-pause when the tab is hidden
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state === 'playing') pauseGame();
+});
+
+// ---------- Game flow ----------
+function startGame() {
+  reset();
+  state = 'playing';
+  lcdEl.classList.remove('crash');
+  overlay.classList.add('hidden');
+  lastTick = performance.now();
+}
+
+function pauseGame() {
+  state = 'paused';
+  showOverlay('PAUSED', 'Press Space or tap resume.', 'RESUME');
+}
+
+function resumeGame() {
+  state = 'playing';
+  overlay.classList.add('hidden');
+  lastTick = performance.now();
+}
+
+function gameOver(won) {
+  state = 'over';
+  lcdEl.classList.add('crash');                 // LCD blink
+  const isNewBest = score > best;
+  if (isNewBest) {
+    best = score;
+    bestEl.textContent = best;
+    try { localStorage.setItem('neonSnakeBest', best); } catch (e) {}
+  }
+  const title = won ? 'YOU WIN!' : 'GAME OVER';
+  const msg = `Score ${score}` + (isNewBest ? '\nNew high score!' : `\nBest ${best}`);
+  // small delay so the player sees the crash before the overlay appears
+  setTimeout(() => showOverlay(title, msg, 'PLAY AGAIN'), 650);
+}
+
+function showOverlay(title, text, btnLabel) {
+  // hide difficulty buttons while paused (changing speed mid-game would be confusing)
+  document.getElementById('levels').style.display = state === 'paused' ? 'none' : 'flex';
+  ovTitle.textContent = title;
+  ovText.textContent = text;
+  ovText.style.whiteSpace = 'pre-line';        // lets "\n" show as a new line
+  playBtn.textContent = btnLabel;
+  overlay.classList.remove('hidden');
+}
+
+// ---------- One game step (one move of the snake) ----------
+function step() {
+  if (queue.length) dir = queue.shift();
+
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+  const willEat = head.x === food.x && head.y === food.y;
+
+  // Wall collision
+  const hitWall = head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= COLS;
+  // Self collision (the tail will move away this tick, so ignore it unless we're eating)
+  const body = willEat ? snake : snake.slice(0, -1);
+  const hitSelf = body.some(s => s.x === head.x && s.y === head.y);
+
+  if (hitWall || hitSelf) { gameOver(false); return; }
+
+  snake.unshift(head);
+
+  if (willEat) {
+    eaten++;
+    score += 10;
+    scoreEl.textContent = score;
+    tickMs = Math.max(LEVELS[level].min, LEVELS[level].start - eaten * 3);   // speed up a little each time
+    if (snake.length === COLS * COLS) { gameOver(true); return; }  // board full
+    placeFood();
+  } else {
+    snake.pop();   // no food eaten: remove the tail so length stays the same
+  }
+}
+
+// ---------- Drawing ----------
+// Faint "off" pixels in every cell, like a real LCD screen
+function drawGhostPixels() {
+  ctx.fillStyle = GHOST;
+  for (let x = 0; x < COLS; x++) {
+    for (let y = 0; y < COLS; y++) {
+      ctx.fillRect(x * CELL + 3, y * CELL + 3, CELL - 6, CELL - 6);
+    }
+  }
+}
+
+// One solid block of the snake
+function drawBlock(x, y) {
+  ctx.fillRect(x * CELL + 1, y * CELL + 1, CELL - 2, CELL - 2);
+}
+
+// Food is a small plus shape (5 mini blocks) that blinks, like the classic phone game
+function drawFood(time) {
+  const on = Math.floor(time / 300) % 2 === 0;
+  ctx.globalAlpha = on ? 1 : 0.35;
+  ctx.fillStyle = INK;
+  const u = CELL / 3;                       // size of one mini block
+  const bx = food.x * CELL;
+  const by = food.y * CELL;
+  ctx.fillRect(bx + u, by, u, u);           // top
+  ctx.fillRect(bx, by + u, u, u);           // left
+  ctx.fillRect(bx + u, by + u, u, u);       // center
+  ctx.fillRect(bx + 2 * u, by + u, u, u);   // right
+  ctx.fillRect(bx + u, by + 2 * u, u, u);   // bottom
+  ctx.globalAlpha = 1;
+}
+
+function drawSnake() {
+  ctx.fillStyle = INK;
+  snake.forEach(s => drawBlock(s.x, s.y));
+
+  // head gets two little "eyes" in screen color so you can tell which way it faces
+  const h = snake[0];
+  const cx = h.x * CELL + CELL / 2;
+  const cy = h.y * CELL + CELL / 2;
+  const px = -dir.y, py = dir.x;            // perpendicular to direction
+  ctx.fillStyle = LCD;
+  [-1, 1].forEach(side => {
+    ctx.fillRect(cx + dir.x * 5 + px * side * 5 - 2, cy + dir.y * 5 + py * side * 5 - 2, 4, 4);
+  });
+}
+
+function draw(time) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGhostPixels();
+  if (!snake) return;
+  drawFood(time);
+  drawSnake();
+}
+
+// ---------- Main loop ----------
+function loop(now) {
+  if (state === 'playing' && now - lastTick >= tickMs) {
+    lastTick = now;
+    step();
+  }
+  draw(now);
+  requestAnimationFrame(loop);
+}
+
+// ---------- Difficulty buttons ----------
+const levelBtns = document.querySelectorAll('.lvl');
+
+function setLevel(name) {
+  level = name;
+  // highlight only the chosen button
+  levelBtns.forEach(b => b.classList.toggle('active', b.dataset.level === name));
+  try { localStorage.setItem('neonSnakeLevel', name); } catch (e) {}
+}
+
+levelBtns.forEach(b => b.addEventListener('click', () => setLevel(b.dataset.level)));
+setLevel(level);
+
+// ---------- Boot ----------
+state = 'ready';
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
